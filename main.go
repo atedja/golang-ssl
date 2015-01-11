@@ -38,7 +38,7 @@ func (s *Server) Initialize() {
 }
 
 func (s *Server) Listen(fn NewConnectionFunc) {
-	listener, err := tls.Listen("tcp", ":10002", s.Config)
+	listener, err := tls.Listen("tcp", ":10000", s.Config)
 	if err != nil {
 		panic(err)
 	}

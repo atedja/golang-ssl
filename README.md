@@ -1,6 +1,6 @@
 # golang-ssl
 
-TCL Server with SSL/TSL.
+TCP Server with SSL/TSL.
 
 Run:
 
