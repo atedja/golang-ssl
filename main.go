@@ -7,24 +7,26 @@ import "os"
 import "os/signal"
 import "syscall"
 
+var done chan bool
+
 type NewConnectionFunc func(*net.Conn)
 
 type Server struct {
 	Config   *tls.Config
 	Listener *net.Listener
-	Done     chan bool
+	Quit     chan bool
 }
 
 func NewServer() *Server {
 	return &Server{
 		Config:   nil,
 		Listener: nil,
-		Done:     make(chan bool, 1),
+		Quit:     make(chan bool, 1),
 	}
 }
 
 func (s *Server) Initialize() {
-	cert, err := tls.LoadX509KeyPair("mykey.pem", "mykey.key")
+	cert, err := tls.LoadX509KeyPair("cert.pem", "key.pem")
 	if err != nil {
 		panic(err)
 	}
@@ -36,55 +38,60 @@ func (s *Server) Initialize() {
 }
 
 func (s *Server) Listen(fn NewConnectionFunc) {
-	listener, err := tls.Listen("tcp", ":10000", s.Config)
+	listener, err := tls.Listen("tcp", ":10002", s.Config)
 	if err != nil {
 		panic(err)
 	}
 	s.Listener = &listener
+	fmt.Println("Server listening")
 
+MainLoop:
 	for {
 		connection, err := listener.Accept()
 		if err != nil {
 			select {
-			case <-s.Done:
+			case <-s.Quit:
 				fmt.Println("Server closed")
 			default:
 				fmt.Println("Connection error")
 			}
-			break
+			break MainLoop
 		} else {
 			fmt.Println(connection.RemoteAddr(), "connected")
 			go fn(&connection)
 		}
 	}
+	done <- true
+}
+
+func (s *Server) Close() {
+	s.Quit <- true
+	(*s.Listener).Close()
 }
 
 func NewConnection(conn *net.Conn) {
-	buffer := make([]byte, 2048)
-	bytesRead, err := conn.Read(buffer)
-	if err != nil || bytesRead <= 0 {
-		conn.Close()
-		return
+	c := *conn
+	bytesSent, err := c.Write([]byte("Data from server"))
+	if err != nil {
+		panic(err)
 	}
-
-	conn.Write([]byte("Echoing back"))
-	conn.Write(buffer)
-	conn.Close()
+	fmt.Println("Bytes Sent:", bytesSent)
+	c.Close()
 }
 
 func main() {
 
-	done := make(chan bool, 1)
+	done = make(chan bool, 1)
 	s := NewServer()
 	s.Initialize()
+	go s.Listen(NewConnection)
 
 	// Capture Ctrl+C signal, and cleanup before terminate
 	c := make(chan os.Signal, 2)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-c
-		s.Done <- true
-		done <- true
+		s.Close()
 	}()
 
 	<-done
